@@ -5,8 +5,8 @@ import MostImprovedQueriesChart from "./components/mostimprovedqueries";
 export default function Home() {
   return (
     <>
-      <div className="w-5/6 h-full ">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-1 mt-1 w-[98%] m-auto h-[17vh]">
+      <div className="w-[98%] h-full overflow-y-hidden overflow-x-hidden">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-1 mt-1 w-[98%] h-[17vh] m-auto">
           <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm h-[17vh]">
             <div className="flex justify-between items-center">
               <h3 className="text-sm font-medium text-gray-500">Avg. Query Time Before</h3>
@@ -51,10 +51,10 @@ export default function Home() {
             </div>
           </div>
         </div>
-        <div className="w-[98%] m-auto h-[40vh]">
+        <div className="w-[98%] h-[40vh] m-auto">
         <PerformanceComparison  />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-1 w-[98%] m-auto h-[40vh] mt-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-1 w-[98%] h-[35vh] mt-1 m-auto ">
           <IndexTypeChart />
           <MostImprovedQueriesChart />
         </div>
