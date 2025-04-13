@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import Chart from 'chart.js/auto';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const PerformanceComparison = () => {
+const PerformanceComparison = ({ data = null }) => {
   const chartRef = useRef(null);
   
   useEffect(() => {
@@ -11,20 +11,33 @@ const PerformanceComparison = () => {
     
     const ctx = chartRef.current.getContext('2d');
     
+    // Use provided data or fallback to defaults
+    const labels = data?.labels || [
+      'SELECT * FROM customers',
+      'JOIN orders, customers',
+      'SELECT COUNT(*) GROUP BY', 
+      'Complex JOIN with subquery',
+      'SELECT with ORDER BY',
+      'WHERE with multiple conditions'
+    ];
+    
+    const beforeData = data?.beforeData || [850, 1240, 920, 1650, 780, 1100];
+    const afterData = data?.afterData || [150, 320, 180, 410, 130, 240];
+    
     // Chart configuration
     const chart = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: ['SELECT * FROM customers', 'JOIN orders, customers', 'SELECT COUNT(*) GROUP BY', 'Complex JOIN with subquery', 'SELECT with ORDER BY', 'WHERE with multiple conditions'],
+        labels: labels,
         datasets: [{
           label: 'Before Indexing (ms)',
-          data: [850, 1240, 920, 1650, 780, 1100],
+          data: beforeData,
           backgroundColor: 'rgba(239, 68, 68, 0.8)', // red
           barPercentage: 0.6,
           categoryPercentage: 0.7
         }, {
           label: 'After Indexing (ms)',
-          data: [150, 320, 180, 410, 130, 240],
+          data: afterData,
           backgroundColor: 'rgba(34, 197, 94, 0.8)', // green
           barPercentage: 0.6,
           categoryPercentage: 0.7
@@ -81,9 +94,9 @@ const PerformanceComparison = () => {
     
     // Clean up the chart when component unmounts
     return () => chart.destroy();
-  }, []);
+  }, [data]);
 
-return (
+  return (
     <Card className="h-[40vh]">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle>Performance Comparison</CardTitle>
@@ -104,7 +117,7 @@ return (
             </div>
         </CardContent>
     </Card>
-);
+  );
 };
 
 export default PerformanceComparison;

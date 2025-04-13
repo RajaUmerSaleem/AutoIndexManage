@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import Chart from 'chart.js/auto';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const MostImprovedQueriesChart = () => {
+const MostImprovedQueriesChart = ({ queries = null }) => {
   const chartRef = useRef(null);
   
   useEffect(() => {
@@ -11,14 +11,23 @@ const MostImprovedQueriesChart = () => {
     
     const ctx = chartRef.current.getContext('2d');
     
+    // Use provided queries or fallback to defaults
+    let labels = ['Query #1', 'Query #2', 'Query #3', 'Query #4', 'Query #5'];
+    let values = [94, 88, 82, 75, 68]; // default values
+    
+    if (queries && queries.length > 0) {
+      labels = queries.map(q => q.query);
+      values = queries.map(q => q.improvement);
+    }
+    
     // Chart configuration
     const chart = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: ['Query #1', 'Query #2', 'Query #3', 'Query #4', 'Query #5'],
+        labels: labels,
         datasets: [{
           label: 'Performance Improvement',
-          data: [94, 88, 82, 75, 68],
+          data: values,
           backgroundColor: 'rgba(139, 92, 246, 0.8)', // violet
         }]
       },
@@ -54,7 +63,7 @@ const MostImprovedQueriesChart = () => {
     
     // Clean up the chart when component unmounts
     return () => chart.destroy();
-  }, []);
+  }, [queries]);
 
   return (
     <Card>

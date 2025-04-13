@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import Chart from 'chart.js/auto';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const IndexTypeChart = () => {
+const IndexTypeChart = ({ distribution = null }) => {
   const chartRef = useRef(null);
   
   useEffect(() => {
@@ -11,26 +11,32 @@ const IndexTypeChart = () => {
     
     const ctx = chartRef.current.getContext('2d');
     
+    // Use provided distribution or fallback to defaults
+    let labels = ['B-tree', 'Hash', 'Bitmap'];
+    let values = [65, 20, 8]; // default values
+    
+    if (distribution) {
+      labels = Object.keys(distribution);
+      values = Object.values(distribution);
+    }
+    
     // Chart configuration
     const chart = new Chart(ctx, {
       type: 'doughnut',
       data: {
-        labels: ['B-Tree', 'Hash', 'GIN', 'BRIN', 'GiST'],
+        labels: labels,
         datasets: [{
-          data: [65, 20, 8, 5, 2],
+          data: values,
           backgroundColor: [
             'rgba(59, 130, 246, 0.8)', // blue
             'rgba(99, 102, 241, 0.8)', // indigo
             'rgba(139, 92, 246, 0.8)',  // violet
-            'rgba(168, 85, 247, 0.8)',  // purple
-            'rgba(217, 70, 239, 0.8)'   // fuchsia
+         // fuchsia
           ],
           hoverBackgroundColor: [
             'rgba(59, 130, 246, 1)',
             'rgba(99, 102, 241, 1)',
             'rgba(139, 92, 246, 1)',
-            'rgba(168, 85, 247, 1)',
-            'rgba(217, 70, 239, 1)'
           ],
           borderWidth: 0
         }]
@@ -64,7 +70,7 @@ const IndexTypeChart = () => {
     
     // Clean up the chart when component unmounts
     return () => chart.destroy();
-  }, []);
+  }, [distribution]);
 
   return (
     <Card>
