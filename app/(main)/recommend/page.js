@@ -13,48 +13,105 @@ export default function Recommendations() {
   const [queryKeys, setQueryKeys] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
-  const queriesPerPage = 5; 
+  const [indexedQueries, setIndexedQueries] = useState([]);
+  const queriesPerPage = 5;
 
   useEffect(() => {
-    setIsLoading(true);
-    
-    // Load previously applied recommendations
-    
-    const storedQueries = localStorage.getItem('queryLogs');
-    if (storedQueries) {
-      const parsedQueries = JSON.parse(storedQueries);
-      // Process and generate recommendations for each query
-      const processedData = {};
-      const keys = [];
-      
-      parsedQueries.forEach((query, index) => {
-        const queryId = `query${index + 1}`;
-        keys.push(queryId);
-        
-        // Generate synthetic execution plan and recommendations based on query text
-        const { executionPlan, recommendations, tables } = analyzeQuery(query.query);
-        
-        processedData[queryId] = {
-          sql: query.query,
-          table: tables.join(', '),
-          executionTime: `${Math.round(500 + Math.random() * 1000)}ms`,
-          timestamp: query.timestamp,
-          fileName: query.fileName,
-          executionPlan,
-          recommendations
-        };
-      });
-      
-      setQueriesData(processedData);
-      setQueryKeys(keys);
-      
-      if (keys.length > 0) {
-        setActiveQueryTab(keys[0]);
+    const fetchQueriesFromMongoDB = async () => {
+      setIsLoading(true);
+      try {
+        const token = localStorage.getItem("token");
+
+        if (token) {
+          // Fetch queries from MongoDB
+          const response = await fetch("/api/data/queries", {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (!response.ok) throw new Error("Failed to fetch queries from MongoDB");
+
+          const queries = await response.json();
+          processQueries(queries);
+        } else {
+          // Fallback to localStorage for guest users
+          const storedQueries = localStorage.getItem("queryLogs");
+          if (storedQueries) {
+            const queries = JSON.parse(storedQueries);
+            processQueries(queries);
+          } else {
+            setQueriesData({});
+            setQueryKeys([]);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching queries:", error);
+      } finally {
+        setIsLoading(false);
       }
-    }
-    
-    setIsLoading(false);
+    };
+
+    fetchQueriesFromMongoDB();
   }, []);
+
+  useEffect(() => {
+    const fetchIndexedQueries = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const response = await fetch("/api/data/appliedIndexes", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch indexed queries");
+        }
+
+        const data = await response.json();
+        setIndexedQueries(data);
+      } catch (error) {
+        console.error("Error fetching indexed queries:", error);
+      }
+    };
+
+    fetchIndexedQueries();
+  }, []);
+
+  const processQueries = (queries) => {
+    const processedData = {};
+    const keys = [];
+
+    queries.forEach((query, index) => {
+      const queryId = `query${index + 1}`;
+      keys.push(queryId);
+
+      // Generate synthetic execution plan and recommendations based on query text
+      const { executionPlan, recommendations, tables } = analyzeQuery(query.query);
+
+      processedData[queryId] = {
+        sql: query.query,
+        table: tables.join(', '),
+        executionTime: `${Math.round(500 + Math.random() * 1000)}ms`,
+        timestamp: query.timestamp,
+        fileName: query.fileName,
+        executionPlan,
+        recommendations
+      };
+    });
+
+    setQueriesData(processedData);
+    setQueryKeys(keys);
+
+    if (keys.length > 0) {
+      setActiveQueryTab(keys[0]);
+    }
+  };
 
   // Analyze query to generate execution plan and recommendations
   const analyzeQuery = (queryText) => {
@@ -64,92 +121,92 @@ export default function Recommendations() {
     const hasWhere = query.includes('where');
     const hasOrderBy = query.includes('order by');
     const hasGroupBy = query.includes('group by');
-    
+
     // Generate execution plan
     const executionPlan = [];
     let cost = 100;
-    
+
     if (hasOrderBy) {
       const sortColumn = extractOrderByColumns(query);
-      executionPlan.unshift({ 
-        id: "sort", 
-        label: "Sort", 
-        description: `Sort by ${sortColumn}`, 
+      executionPlan.unshift({
+        id: "sort",
+        label: "Sort",
+        description: `Sort by ${sortColumn}`,
         cost: `${cost}`
       });
       cost += 150;
     }
-    
+
     if (hasGroupBy) {
       const groupByColumn = extractGroupByColumns(query);
-      executionPlan.unshift({ 
-        id: "groupby", 
-        label: "Group By", 
-        description: `Group by ${groupByColumn}`, 
+      executionPlan.unshift({
+        id: "groupby",
+        label: "Group By",
+        description: `Group by ${groupByColumn}`,
         cost: `${cost}`
       });
       cost += 200;
     }
-    
+
     if (hasWhere) {
       const whereConditions = extractWhereConditions(query);
-      executionPlan.unshift({ 
-        id: "filter", 
-        label: "Filter", 
-        description: whereConditions, 
+      executionPlan.unshift({
+        id: "filter",
+        label: "Filter",
+        description: whereConditions,
         cost: `${cost}`
       });
       cost += 200;
     }
-    
+
     if (hasJoin) {
       const joinTables = extractJoinTables(query);
-      executionPlan.unshift({ 
-        id: "hash_join", 
-        label: "Hash Join", 
-        description: joinTables, 
+      executionPlan.unshift({
+        id: "hash_join",
+        label: "Hash Join",
+        description: joinTables,
         cost: `${cost}`
       });
       cost += 300;
-      
+
       tables.forEach((table, idx) => {
-        executionPlan.push({ 
-          id: `seq_scan_${table}`, 
-          label: "Seq Scan", 
-          description: table, 
+        executionPlan.push({
+          id: `seq_scan_${table}`,
+          label: "Seq Scan",
+          description: table,
           cost: `${Math.round(cost / (idx + 1.5))}`
         });
       });
     } else {
       tables.forEach(table => {
-        executionPlan.push({ 
-          id: `seq_scan_${table}`, 
-          label: "Seq Scan", 
-          description: table, 
+        executionPlan.push({
+          id: `seq_scan_${table}`,
+          label: "Seq Scan",
+          description: table,
           cost: `${Math.round(cost / 2)}`
         });
       });
     }
-    
+
     // Generate recommendations
     const recommendations = [];
     let recId = 1;
-    
+
     if (hasWhere) {
       const whereColumns = extractWhereColumns(query);
       whereColumns.forEach(col => {
         // Determine column cardinality (estimation)
         const isLowCardinality = estimateCardinality(col.column);
-        
+
         // Determine best index type based on operator and cardinality
         let indexType;
         let reason;
-        
+
         if (col.operator === '=') {
           // For equality operations
           indexType = isLowCardinality ? "Bitmap" : "Hash";
-          reason = isLowCardinality 
-            ? "Low-cardinality column with equality filter - bitmap provides compact storage" 
+          reason = isLowCardinality
+            ? "Low-cardinality column with equality filter - bitmap provides compact storage"
             : "Frequent equality comparisons - hash index provides O(1) lookups";
         } else if (col.operator === 'like') {
           indexType = "B-tree";
@@ -159,7 +216,7 @@ export default function Recommendations() {
           indexType = "B-tree";
           reason = "Range-based filtering - B-tree supports efficient range scans";
         }
-        
+
         const improvement = Math.round(40 + Math.random() * 40);
         recommendations.push({
           id: recId++,
@@ -173,7 +230,7 @@ export default function Recommendations() {
         });
       });
     }
-    
+
     if (hasJoin) {
       const joinColumns = extractJoinColumns(query);
       joinColumns.forEach(join => {
@@ -186,7 +243,7 @@ export default function Recommendations() {
           improvement,
           reason: "Improves join performance"
         });
-        
+
         if (Math.random() > 0.5) {
           recommendations.push({
             id: recId++,
@@ -199,7 +256,7 @@ export default function Recommendations() {
         }
       });
     }
-    
+
     if (hasOrderBy) {
       const orderColumns = extractOrderByColumns(query).split(',').map(c => c.trim());
       const improvement = Math.round(30 + Math.random() * 30);
@@ -212,7 +269,7 @@ export default function Recommendations() {
         reason: "Improves ORDER BY performance"
       });
     }
-    
+
     if (recommendations.length === 0) {
       recommendations.push({
         id: recId++,
@@ -223,19 +280,19 @@ export default function Recommendations() {
         reason: "General improvement for primary key lookups"
       });
     }
-    
+
     return {
       executionPlan,
       recommendations,
       tables
     };
   };
-  
+
   // Helper extraction functions
   const extractTables = (query) => {
     const fromMatch = query.match(/from\s+([a-z0-9_,\s]+)(?:\s+where|\s+group|\s+order|\s+limit|$)/i);
     if (!fromMatch) return ['unknown_table'];
-    
+
     const tablesStr = fromMatch[1];
     return tablesStr.split(',').map(t => {
       // Handle table aliases like "customers c"
@@ -243,17 +300,17 @@ export default function Recommendations() {
       return parts[0].trim();
     });
   };
-  
+
   const extractWhereConditions = (query) => {
     const whereMatch = query.match(/where\s+(.+?)(?:\s+group|\s+order|\s+limit|$)/i);
     if (!whereMatch) return "unknown conditions";
     return whereMatch[1];
   };
-  
+
   const extractWhereColumns = (query) => {
     const whereMatch = query.match(/where\s+(.+?)(?:\s+group|\s+order|\s+limit|$)/i);
     if (!whereMatch) return [];
-    
+
     const conditions = whereMatch[1];
     const columnMatches = conditions.split(/and|or/i).map(condition => {
       const match = condition.match(/([a-z0-9_]+)\.?([a-z0-9_]+)?\s*(=|>|<|>=|<=|!=|like|in)\s*.+/i);
@@ -268,32 +325,32 @@ export default function Recommendations() {
       }
       return null;
     }).filter(Boolean);
-    
+
     return columnMatches;
   };
-  
+
   const extractOrderByColumns = (query) => {
     const orderByMatch = query.match(/order\s+by\s+(.+?)(?:\s+limit|$)/i);
     if (!orderByMatch) return "unknown column";
     return orderByMatch[1];
   };
-  
+
   const extractGroupByColumns = (query) => {
     const groupByMatch = query.match(/group\s+by\s+(.+?)(?:\s+having|\s+order|\s+limit|$)/i);
     if (!groupByMatch) return "unknown column";
     return groupByMatch[1];
   };
-  
+
   const extractJoinTables = (query) => {
     const joinMatch = query.match(/join\s+([a-z0-9_]+)\s+(?:as\s+)?([a-z0-9_]+)?\s+on\s+(.+?)(?:\s+where|\s+group|\s+order|\s+limit|$)/i);
     if (!joinMatch) return "unknown join condition";
     return joinMatch[3];
   };
-  
+
   const extractJoinColumns = (query) => {
     const joinMatches = [];
     const joinRegex = /join\s+([a-z0-9_]+)\s+(?:as\s+)?([a-z0-9_]+)?\s+on\s+([a-z0-9_]+)\.([a-z0-9_]+)\s*=\s*([a-z0-9_]+)\.([a-z0-9_]+)/ig;
-    
+
     let match;
     while (match = joinRegex.exec(query)) {
       const joinTable = match[1];
@@ -302,7 +359,7 @@ export default function Recommendations() {
       const leftColumn = match[4];
       const rightTable = match[5];
       const rightColumn = match[6];
-      
+
       joinMatches.push({
         table1: leftTable,
         column1: leftColumn,
@@ -310,7 +367,7 @@ export default function Recommendations() {
         column2: rightColumn
       });
     }
-    
+
     return joinMatches;
   };
 
@@ -318,16 +375,16 @@ export default function Recommendations() {
   // This would normally be based on database statistics - here we're using a simple heuristic
   const estimateCardinality = (columnName) => {
     const lowCardinalityPatterns = [
-      'status', 'type', 'category', 'gender', 'priority', 'state', 
+      'status', 'type', 'category', 'gender', 'priority', 'state',
       'active', 'enabled', 'flag', 'role', 'level', 'tier', 'color'
     ];
-    
+
     // Force some common ID patterns to high cardinality
     if (/(_id|id|_key|key|code|num|number)$/i.test(columnName)) {
       return false; // Not low cardinality
     }
-    
-    return lowCardinalityPatterns.some(pattern => 
+
+    return lowCardinalityPatterns.some(pattern =>
       columnName.toLowerCase().includes(pattern));
   };
 
@@ -335,62 +392,82 @@ export default function Recommendations() {
   const generateCreateIndexSQL = (type, table, columns) => {
     const columnList = columns.join(', ');
     const indexName = `idx_${table}_${columns.join('_')}`;
-    
+
     let sql = `CREATE INDEX ${indexName} ON ${table} (${columnList})`;
-    
+
     if (type === "Hash") {
       sql += " USING HASH";
     } else if (type === "Bitmap") {
-      sql += " USING BITMAP"; 
+      sql += " USING BITMAP";
     }
-    
+
     return sql;
   };
 
-  const handleApplyRecommendation = (recId, queryKey) => {
-    // Debugging: Check what type of index this recommendation is
-    const recommendation = queriesData[queryKey].recommendations.find(rec => rec.id === recId);
-    console.log(`Applying index: ${recommendation.type} on ${recommendation.table}.${recommendation.columns}`);
-    console.log(`Operator detected: ${recommendation.operator}`);
-    console.log(`SQL: ${recommendation.sql}`);
-    // First add to the UI state
-    setAppliedRecommendations(prev => [...prev, recId]);
-  
+  const handleApplyRecommendation = async (recId, queryKey) => {
+    const recommendation = queriesData[queryKey].recommendations.find((rec) => rec.id === recId);
     if (!recommendation) return;
-    
-    // Create a record of the applied recommendation
+
     const appliedRec = {
-      id: recId,
-      type: recommendation.type,
-      table: recommendation.table,
+      indexName: `idx_${recommendation.table}_${recommendation.columns.join('_')}`,
+      tableName: recommendation.table,
       columns: recommendation.columns,
       improvement: recommendation.improvement,
-      queryId: queryKey,
-      query: queriesData[queryKey].sql,
-      appliedAt: new Date().toISOString(),
-      sql: recommendation.sql
+      timestamp: new Date().toISOString(),
     };
-    
-    // Store in localStorage
-    const existingApplied = JSON.parse(localStorage.getItem('appliedRecommendations') || '[]');
-    existingApplied.push(appliedRec);
-    localStorage.setItem('appliedRecommendations', JSON.stringify(existingApplied));
-    
-    // Optional: Show a success message or toast notification
-    alert(`Index applied successfully: ${recommendation.sql}`);
+
+    try {
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        // Guest mode: Save to localStorage
+        const storedIndexes = localStorage.getItem("appliedIndexes");
+        const indexes = storedIndexes ? JSON.parse(storedIndexes) : [];
+        indexes.push(appliedRec);
+        localStorage.setItem("appliedIndexes", JSON.stringify(indexes));
+      } else {
+        // Logged-in mode: Save to MongoDB
+        const response = await fetch("/api/data/appliedIndexes", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(appliedRec),
+        });
+
+        if (!response.ok) throw new Error("Failed to save applied index to MongoDB");
+      }
+
+      setAppliedRecommendations((prev) => [...prev, recId]);
+      alert(`Index applied successfully: ${appliedRec.indexName}`);
+    } catch (error) {
+      console.error("Error applying recommendation:", error);
+      alert("Failed to apply index. Please try again.");
+    }
   };
 
-  const isApplied = (recId) => appliedRecommendations.includes(recId);
+  const copyToClipboard = (query) => {
+    navigator.clipboard.writeText(query).then(() => {
+      alert("Query copied to clipboard!");
+    });
+  };
+
+  const isApplied = (recId, queryKey) => {
+    return appliedRecommendations.some(
+      (rec) => rec.id === recId && rec.queryId === queryKey
+    );
+  };
 
   // Helper function to render execution plan nodes
   const renderExecutionPlanNode = (node, level = 0) => {
     return (
       <div key={node.id} className="ml-6 relative">
-        <div className="absolute left-0 top-0 bottom-0 border-l-2 border-dashed border-zinc-200 dark:border-zinc-700" 
-             style={{ left: '-12px' }}></div>
+        <div className="absolute left-0 top-0 bottom-0 border-l-2 border-dashed border-zinc-200 dark:border-zinc-700"
+          style={{ left: '-12px' }}></div>
         <div className="flex items-start mb-3 relative">
-          <div className="absolute w-3 h-0 border-t-2 border-dashed border-zinc-200 dark:border-zinc-700" 
-               style={{ left: '-12px', top: '12px' }}></div>
+          <div className="absolute w-3 h-0 border-t-2 border-dashed border-zinc-200 dark:border-zinc-700"
+            style={{ left: '-12px', top: '12px' }}></div>
           <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-md border w-full">
             <div className="flex justify-between">
               <div className="font-medium">{node.label}</div>
@@ -440,7 +517,7 @@ export default function Recommendations() {
           <CardContent className="p-8 text-center">
             <p className="text-muted-foreground mb-4">No queries found in the database.</p>
             <p className="text-sm">Please upload query logs in the Query Logs section first.</p>
-            <Button className="mt-4" onClick={() => window.location.href = '/query'}>
+            <Button className="mt-4 bg-purple-600" onClick={() => window.location.href = '/query'}>
               Go to Query Logs
             </Button>
           </CardContent>
@@ -452,8 +529,8 @@ export default function Recommendations() {
               <h2 className="text-lg font-medium">Queries ({queryKeys.length})</h2>
               {queryKeys.length > queriesPerPage && (
                 <div className="flex items-center space-x-1">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
                     onClick={prevPage}
                     disabled={currentPage === 0}
@@ -465,8 +542,8 @@ export default function Recommendations() {
                   <span className="text-sm text-muted-foreground">
                     Page {currentPage + 1} of {Math.ceil(queryKeys.length / queriesPerPage)}
                   </span>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
                     onClick={nextPage}
                     disabled={(currentPage + 1) * queriesPerPage >= queryKeys.length}
@@ -479,17 +556,17 @@ export default function Recommendations() {
               )}
             </div>
 
-            <Tabs 
-              defaultValue={activeQueryTab} 
-              value={activeQueryTab} 
+            <Tabs
+              defaultValue={activeQueryTab}
+              value={activeQueryTab}
               onValueChange={setActiveQueryTab}
             >
               <TabsList className="w-full border-b pb-px mb-4">
                 {paginatedQueryKeys().map((queryKey, index) => {
                   const globalIndex = currentPage * queriesPerPage + index;
                   return (
-                    <TabsTrigger 
-                      key={queryKey} 
+                    <TabsTrigger
+                      key={queryKey}
                       value={queryKey}
                       className="data-[state=active]:bg-background data-[state=active]:shadow-none rounded-b-none px-4"
                     >
@@ -515,10 +592,14 @@ export default function Recommendations() {
                         <Badge variant="outline" className="ml-2 text-red-500">
                           {queriesData[queryKey].executionTime}
                         </Badge>
-                        <span className="ml-4 text-muted-foreground">Source: </span>
-                        <Badge variant="outline" className="ml-2">
-                          {queriesData[queryKey].fileName}
-                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="ml-auto"
+                          onClick={() => copyToClipboard(queriesData[queryKey].sql)}
+                        >
+                          Copy Query
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -573,15 +654,17 @@ export default function Recommendations() {
                                     </div>
                                   </div>
                                 </div>
-                                <Button 
-                                  size="sm" 
-                                  variant={isApplied(rec.id) ? "outline" : "default"}
-                                  disabled={isApplied(rec.id)}
+                                <Button
+                                  size="sm"
+                                  variant={isApplied(rec.id, queryKey) ? "outline" : "default"}
+                                  disabled={isApplied(rec.id, queryKey)}
                                   onClick={() => handleApplyRecommendation(rec.id, queryKey)}
                                   className="whitespace-nowrap"
                                 >
-                                  {isApplied(rec.id) ? (
-                                    <><CheckCircle2Icon className="h-4 w-4 mr-1" /> Applied</>
+                                  {isApplied(rec.id, queryKey) ? (
+                                    <>
+                                      <CheckCircle2Icon className="h-4 w-4 mr-1" /> Applied
+                                    </>
                                   ) : (
                                     "Apply"
                                   )}
@@ -665,6 +748,40 @@ export default function Recommendations() {
               </div>
             </CardContent>
           </Card>
+
+          <div className="mt-6">
+            <h2 className="text-lg font-medium mb-2">Applied Indexes</h2>
+            <div className="max-h-64 overflow-y-auto border rounded-md p-4 bg-zinc-50 dark:bg-zinc-900">
+              {indexedQueries.length > 0 ? (
+                indexedQueries.map((query, index) => (
+                  <div key={index} className="mb-4">
+                    <p className="text-sm font-mono">
+                      <strong>Index Name:</strong> {query.indexName || "N/A"}
+                    </p>
+                    <p className="text-sm font-mono">
+                      <strong>Table:</strong> {query.tableName || "N/A"}
+                    </p>
+                    <p className="text-sm font-mono">
+                      <strong>Columns:</strong> {query.columns?.join(", ") || "N/A"}
+                    </p>
+                    <p className="text-sm font-mono">
+                      <strong>Improvement:</strong> {query.improvement || "N/A"}%
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      onClick={() => copyToClipboard(generateIndexQuery(query))}
+                    >
+                      Copy Index Query
+                    </Button>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No applied indexes found.</p>
+              )}
+            </div>
+          </div>
         </>
       )}
     </div>
