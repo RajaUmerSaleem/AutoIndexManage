@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'react-toastify';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -9,6 +10,9 @@ export default function LoginPage() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+
+    toast.info('Logging in... Please wait.', { autoClose: 2000 });
+
     const response = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -18,6 +22,9 @@ export default function LoginPage() {
     const data = await response.json();
     if (data.success) {
       localStorage.setItem('token', data.token);
+
+      // Notify user about data syncing
+      toast.info('Syncing your data to the server...', { autoClose: false });
 
       // Sync query logs from localStorage to MongoDB
       const storedLogs = localStorage.getItem('queryLogs');
@@ -37,34 +44,26 @@ export default function LoginPage() {
       }
 
       // Sync recommended indexes from localStorage to MongoDB
-      const recommendedIndexes = localStorage.getItem('appliedIndexes');
-      if (recommendedIndexes) {
-        const indexes = JSON.parse(recommendedIndexes);
-        for (const index of indexes) {
-          await fetch('/api/data/appliedIndexes', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${data.token}`,
-            },
-            body: JSON.stringify(index),
-          });
-        }
-        localStorage.removeItem('appliedIndexes'); // Clear localStorage after syncing
-      }
+      localStorage.removeItem('appliedIndexes'); // Clear localStorage after syncing
+    
+
+      // Notify user that syncing is complete
+      toast.success('Data synced successfully! Redirecting to dashboard...', { autoClose: 2000 });
 
       router.push('/dashboard');
     } else {
-      alert(data.message);
+      toast.error(data.message, { autoClose: 3000 });
     }
   };
 
   const handleSkip = () => {
     router.push('/dashboard'); // Redirect to the dashboard without login
+    toast.info("You are logged in as a guest. All Features are same but your data will be in your localStorage.");
   };
 
   const handleRegister = () => {
-    router.push('/register'); // Redirect to the registration page
+    router.push('/register'); 
+    toast.info("You are redirected to the registration page.");
   };
 
   return (

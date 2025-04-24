@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 
 const Nav = () => {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -14,11 +15,14 @@ const Nav = () => {
         // Clear localStorage and reload the page
         localStorage.clear();
         window.location.reload();
+        toast.success("Logged out successfully.. Guest Mode ON!!" )
     };
 
     const handleLogin = () => {
         // Redirect to the login page
         window.location.href = "/";
+        toast.info("Redirecting to login page...");
+        toast.success("Your are Leaving Guest mode!!" )
     };
 
     return (

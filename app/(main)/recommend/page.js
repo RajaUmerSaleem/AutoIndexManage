@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRightIcon, CheckCircle2Icon, XCircleIcon, Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { toast } from 'react-toastify';
 
 export default function Recommendations() {
   const [activeQueryTab, setActiveQueryTab] = useState("");
@@ -41,10 +42,21 @@ export default function Recommendations() {
           const storedQueries = localStorage.getItem("queryLogs");
           if (storedQueries) {
             const queries = JSON.parse(storedQueries);
-            processQueries(queries);
+
+            // Ensure data consistency
+            const formattedQueries = queries.map((query) => ({
+              _id: query._id || query.id, // Generate a unique ID if missing
+              query: query.query || "",
+              timestamp: query.timestamp || new Date().toISOString(),
+              fileName: query.fileName || "Unknown File",
+            }));
+
+            processQueries(formattedQueries);
+            console.log("Queries from localStorage:", formattedQueries);
           } else {
             setQueriesData({});
             setQueryKeys([]);
+            setActiveQueryTab("");
           }
         }
       } catch (error) {
@@ -61,6 +73,19 @@ export default function Recommendations() {
     const fetchIndexedQueries = async () => {
       try {
         const token = localStorage.getItem("token");
+
+        if (!token) {
+          // Guest mode: Fetch applied indexes from localStorage
+          const storedIndexes = localStorage.getItem("appliedIndexes");
+          if (storedIndexes) {
+            setIndexedQueries(JSON.parse(storedIndexes));
+          } else {
+            setIndexedQueries([]); // No indexes found in localStorage
+          }
+          return;
+        }
+
+        // Logged-in mode: Fetch applied indexes from the server
         const response = await fetch("/api/data/appliedIndexes", {
           method: "GET",
           headers: {
@@ -87,10 +112,9 @@ export default function Recommendations() {
     const processedData = {};
     const keys = [];
 
-    queries.forEach((query, index) => {
-      const queryId = `query${index + 1}`;
+    queries.forEach((query,index) => {
+      const queryId = `${query._id || query.id}-${index}`;
       keys.push(queryId);
-
       // Generate synthetic execution plan and recommendations based on query text
       const { executionPlan, recommendations, tables } = analyzeQuery(query.query);
 
@@ -110,6 +134,9 @@ export default function Recommendations() {
 
     if (keys.length > 0) {
       setActiveQueryTab(keys[0]);
+    }
+    else {
+      setActiveQueryTab("");
     }
   };
 
@@ -408,13 +435,18 @@ export default function Recommendations() {
     const recommendation = queriesData[queryKey].recommendations.find((rec) => rec.id === recId);
     if (!recommendation) return;
 
+
     const appliedRec = {
+      id: recId,
+      queryId: queryKey, 
       indexName: `idx_${recommendation.table}_${recommendation.columns.join('_')}`,
       tableName: recommendation.table,
       columns: recommendation.columns,
+      type: recommendation.type,
       improvement: recommendation.improvement,
       timestamp: new Date().toISOString(),
     };
+
 
     try {
       const token = localStorage.getItem("token");
@@ -433,17 +465,20 @@ export default function Recommendations() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify(appliedRec),
+          body: JSON.stringify(appliedRec), // Ensure the payload includes queryId and type
         });
 
-        if (!response.ok) throw new Error("Failed to save applied index to MongoDB");
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Failed to save applied index to MongoDB");
+        }
       }
 
       setAppliedRecommendations((prev) => [...prev, recId]);
-      alert(`Index applied successfully: ${appliedRec.indexName}`);
+      toast.success(`Index applied successfully: ${appliedRec.indexName}`);
     } catch (error) {
       console.error("Error applying recommendation:", error);
-      alert("Failed to apply index. Please try again.");
+      toast.error(`Failed to apply index: ${error.message}`);
     }
   };
 
@@ -557,16 +592,18 @@ export default function Recommendations() {
             </div>
 
             <Tabs
-              defaultValue={activeQueryTab}
               value={activeQueryTab}
-              onValueChange={setActiveQueryTab}
+              onValueChange={(value) => {
+                console.log("Tab Changed to:", value); // Debugging
+                setActiveQueryTab(value);
+              }}
             >
               <TabsList className="w-full border-b pb-px mb-4">
                 {paginatedQueryKeys().map((queryKey, index) => {
                   const globalIndex = currentPage * queriesPerPage + index;
                   return (
                     <TabsTrigger
-                      key={queryKey}
+                      key={`${queryKey}-${index}`}
                       value={queryKey}
                       className="data-[state=active]:bg-background data-[state=active]:shadow-none rounded-b-none px-4"
                     >
@@ -576,27 +613,27 @@ export default function Recommendations() {
                 })}
               </TabsList>
 
-              {queryKeys.map((queryKey) => (
-                <TabsContent key={queryKey} value={queryKey} className="space-y-4">
+              {activeQueryTab && (
+                <TabsContent key={activeQueryTab} value={activeQueryTab} className="space-y-4">
                   <Card>
                     <CardHeader>
                       <CardTitle>SQL Query</CardTitle>
-                      <CardDescription>Table(s): {queriesData[queryKey].table}</CardDescription>
+                      <CardDescription>Table(s): {queriesData[activeQueryTab]?.table}</CardDescription>
                     </CardHeader>
                     <CardContent>
                       <div className="bg-zinc-50 dark:bg-zinc-900 p-3 rounded-md font-mono text-sm overflow-x-auto whitespace-pre-wrap">
-                        {queriesData[queryKey].sql}
+                        {queriesData[activeQueryTab]?.sql}
                       </div>
                       <div className="mt-2 flex items-center text-sm">
                         <span className="text-muted-foreground">Execution time: </span>
                         <Badge variant="outline" className="ml-2 text-red-500">
-                          {queriesData[queryKey].executionTime}
+                          {queriesData[activeQueryTab]?.executionTime}
                         </Badge>
                         <Button
                           size="sm"
                           variant="outline"
                           className="ml-auto"
-                          onClick={() => copyToClipboard(queriesData[queryKey].sql)}
+                          onClick={() => copyToClipboard(queriesData[activeQueryTab]?.sql)}
                         >
                           Copy Query
                         </Button>
@@ -615,7 +652,9 @@ export default function Recommendations() {
                       </CardHeader>
                       <CardContent>
                         <div className="mt-2">
-                          {queriesData[queryKey].executionPlan.map(node => renderExecutionPlanNode(node))}
+                          {queriesData[activeQueryTab]?.executionPlan.map((node, index) =>
+                            renderExecutionPlanNode({ ...node, key: `${node.id}-${index}` })
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -632,8 +671,8 @@ export default function Recommendations() {
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-4">
-                          {queriesData[queryKey].recommendations.map(rec => (
-                            <div key={rec.id} className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-md border">
+                          {queriesData[activeQueryTab]?.recommendations.map((rec, index) => (
+                            <div key={`${rec.id}-${index}`} className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-md border">
                               <div className="flex justify-between items-start">
                                 <div>
                                   <div className="font-medium flex items-center">
@@ -644,24 +683,27 @@ export default function Recommendations() {
                                     </span>
                                     Add {rec.type} Index on {rec.table}({rec.columns.join(", ")})
                                   </div>
-                                  <p className="text-xs text-muted-foreground mt-1">
-                                    {rec.reason}
-                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-1">{rec.reason}</p>
                                   <div className="flex items-center mt-2">
                                     <span className="text-xs font-medium">Expected improvement:</span>
-                                    <div className={`ml-2 px-1.5 py-0.5 rounded text-xs ${rec.improvement > 50 ? 'bg-green-500/10 text-green-600' : 'bg-amber-500/10 text-amber-600'}`}>
+                                    <div
+                                      className={`ml-2 px-1.5 py-0.5 rounded text-xs ${rec.improvement > 50
+                                        ? "bg-green-500/10 text-green-600"
+                                        : "bg-amber-500/10 text-amber-600"
+                                        }`}
+                                    >
                                       {rec.improvement}%
                                     </div>
                                   </div>
                                 </div>
                                 <Button
                                   size="sm"
-                                  variant={isApplied(rec.id, queryKey) ? "outline" : "default"}
-                                  disabled={isApplied(rec.id, queryKey)}
-                                  onClick={() => handleApplyRecommendation(rec.id, queryKey)}
+                                  variant={isApplied(rec.id, activeQueryTab) ? "outline" : "default"}
+                                  disabled={isApplied(rec.id, activeQueryTab)}
+                                  onClick={() => handleApplyRecommendation(rec.id, activeQueryTab)}
                                   className="whitespace-nowrap"
                                 >
-                                  {isApplied(rec.id, queryKey) ? (
+                                  {isApplied(rec.id, activeQueryTab) ? (
                                     <>
                                       <CheckCircle2Icon className="h-4 w-4 mr-1" /> Applied
                                     </>
@@ -677,9 +719,10 @@ export default function Recommendations() {
                     </Card>
                   </div>
                 </TabsContent>
-              ))}
+              )}
             </Tabs>
           </div>
+
 
           <Card className="mb-6">
             <CardHeader>
@@ -754,7 +797,7 @@ export default function Recommendations() {
             <div className="max-h-64 overflow-y-auto border rounded-md p-4 bg-zinc-50 dark:bg-zinc-900">
               {indexedQueries.length > 0 ? (
                 indexedQueries.map((query, index) => (
-                  <div key={index} className="mb-4">
+                  <div key={`${query.indexName || 'index'}-${index}`} className="mb-4">
                     <p className="text-sm font-mono">
                       <strong>Index Name:</strong> {query.indexName || "N/A"}
                     </p>

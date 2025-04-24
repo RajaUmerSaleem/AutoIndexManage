@@ -10,7 +10,9 @@ const PerformanceComparison = ({ data }) => {
     if (!chartRef.current || !data) return; // Ensure data is provided
 
     const ctx = chartRef.current.getContext('2d');
-
+    if (chartRef.current.chartInstance) {
+      chartRef.current.chartInstance.destroy();
+    }
     // Use only provided data
     const labels = data.labels;
     const beforeData = data.beforeData;
@@ -91,8 +93,16 @@ const PerformanceComparison = ({ data }) => {
     return () => chart.destroy();
   }, [data]);
 
-  // If no data is provided, show a message or render nothing
-  if (!data || !data.labels || !data.beforeData || !data.afterData) {
+
+  if (
+    !data ||
+    !Array.isArray(data.labels) ||
+    !Array.isArray(data.beforeData) ||
+    !Array.isArray(data.afterData) ||
+    data.labels.length === 0 ||
+    data.beforeData.length === 0 ||
+    data.afterData.length === 0
+  ) {
     return (
       <Card className="h-[40vh] flex items-center justify-center">
         <p className="text-muted-foreground">No data available for performance comparison.</p>

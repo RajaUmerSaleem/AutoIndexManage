@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'react-toastify';
 
 export default function RegisterPage() {
   const [name, setName] = useState('');
@@ -19,8 +20,8 @@ export default function RegisterPage() {
 
     const data = await response.json();
     if (data.success) {
-      alert('Registration successful! Please log in.');
-      router.push('/login'); // Redirect to login page
+      toast.success('Registration successful! Please log in.', { autoClose: 2000 });
+      router.push('/');
     } else {
       alert(data.message);
     }

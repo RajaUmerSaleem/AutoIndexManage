@@ -26,11 +26,75 @@ export default function Home() {
       afterData: [],
     },
   });
+  const normalizeId = (id) => {
+    // Remove any suffix (e.g., "-0") from the ID for consistent matching
+    return id.includes("-") ? id.split("-")[0] : id;
+  };
+
+
 
   const [hasData, setHasData] = useState(true); // Track if we have query data
 
   const processMetrics = (queries, recommendations) => {
-    const queryCount = queries.length;
+    if (!queries || !recommendations || queries.length === 0 || recommendations.length === 0) {
+      console.error("Invalid or empty data provided to processMetrics.");
+      setMetrics({
+        beforeTime: 0,
+        afterTime: 0,
+        improvement: 0,
+        indexesCreated: 0,
+        totalIndexes: 0,
+        queryCount: 0,
+        indexDistribution: {
+          "B-tree": 0,
+          Hash: 0,
+          Bitmap: 0,
+        },
+        comparisonData: {
+          labels: [],
+          beforeData: [],
+          afterData: [],
+        },
+        improvedQueries: [],
+      });
+      return;
+    }
+
+    // Normalize IDs for matching
+    const normalizedRecommendations = recommendations.map((rec) => ({
+      ...rec,
+      queryId: normalizeId(rec.queryId),
+    }));
+
+    const filteredQueries = queries.filter((query) => {
+      return normalizedRecommendations.some((rec) => rec.queryId === normalizeId(query._id||query.id));
+    });
+
+    const queryCount = filteredQueries.length;
+
+    if (queryCount === 0) {
+      console.error("No matching queries found for recommendations.");
+      setMetrics({
+        beforeTime: 0,
+        afterTime: 0,
+        improvement: 0,
+        indexesCreated: recommendations.length,
+        totalIndexes: recommendations.length,
+        queryCount: 0,
+        indexDistribution: {
+          "B-tree": 0,
+          Hash: 0,
+          Bitmap: 0,
+        },
+        comparisonData: {
+          labels: [],
+          beforeData: [],
+          afterData: [],
+        },
+        improvedQueries: [],
+      });
+      return;
+    }
 
     // Calculate index distribution
     const indexDistribution = {
@@ -39,7 +103,7 @@ export default function Home() {
       Bitmap: 0,
     };
 
-    recommendations.forEach((rec) => {
+    normalizedRecommendations.forEach((rec) => {
       if (indexDistribution[rec.type] !== undefined) {
         indexDistribution[rec.type]++;
       } else {
@@ -47,60 +111,48 @@ export default function Home() {
       }
     });
 
-    // If no recommendations, set default values
-    const hasRecommendations = recommendations.length > 0;
-
-    const beforeTime = hasRecommendations
-      ? Math.round(500 + Math.random() * 500) // Simulate before time
-      : Math.round(500 + Math.random() * 500); // Default before time
-
-    const improvementFactor = hasRecommendations
-      ? 0.75 * (1 - Math.exp(-recommendations.length / 5)) // Improvement based on recommendations
-      : 0; // No improvement if no recommendations
-
-    const afterTime = Math.round(beforeTime * (1 - improvementFactor));
-    const improvement = hasRecommendations
-      ? ((beforeTime - afterTime) / beforeTime * 100).toFixed(1)
-      : 0; // No improvement if no recommendations
-
     const comparisonData = {
       labels: [],
       beforeData: [],
       afterData: [],
     };
 
-    queries.slice(0, 6).forEach((query, index) => {
+    const improvedQueries = [];
+
+    // Process performance comparison for filtered queries
+    filteredQueries.forEach((query) => {
       const queryText = query.query.substring(0, 25) + (query.query.length > 25 ? "..." : "");
       comparisonData.labels.push(queryText);
 
-      const baseBefore = Math.round(500 + Math.random() * 800);
-      comparisonData.beforeData.push(baseBefore);
-      comparisonData.afterData.push(
-        hasRecommendations ? Math.round(baseBefore * (0.2 + Math.random() * 0.3)) : baseBefore
-      );
+      const beforeTime = query.executionTime || Math.round(500 + Math.random() * 500);
+      const afterTime = normalizedRecommendations.some((rec) => rec.queryId === normalizeId(query.id || query._id))
+        ? Math.round(beforeTime * 0.7) // Simulate improvement for queries with indexes
+        : beforeTime;
+
+      comparisonData.beforeData.push(beforeTime);
+      comparisonData.afterData.push(afterTime);
+
+      improvedQueries.push({
+        query: queryText,
+        improvement: ((beforeTime - afterTime) / beforeTime) * 100,
+      });
     });
 
-    const improvedQueries = [];
-    if (hasRecommendations) {
-      for (let i = 0; i < Math.min(5, queries.length); i++) {
-        const improvement = 95 - i * 5 - Math.round(Math.random() * 5);
-        improvedQueries.push({
-          query: `Query #${i + 1}`,
-          improvement,
-        });
-      }
-    }
+ 
+    const beforeTime = comparisonData.beforeData.reduce((sum, time) => sum + time, 0) / queryCount;
+    const afterTime = comparisonData.afterData.reduce((sum, time) => sum + time, 0) / queryCount;
+    const improvement = ((beforeTime - afterTime) / beforeTime * 100).toFixed(1);
 
     setMetrics({
-      beforeTime,
-      afterTime,
+      beforeTime: Math.round(beforeTime),
+      afterTime: Math.round(afterTime),
       improvement,
       indexesCreated: recommendations.length,
-      totalIndexes: recommendations.length + 4, // Adjust this if needed
+      totalIndexes: recommendations.length,
       queryCount,
       indexDistribution,
-      improvedQueries,
       comparisonData,
+      improvedQueries,
     });
   };
 
@@ -110,11 +162,40 @@ export default function Home() {
         const token = localStorage.getItem("token");
 
         if (!token) {
-          setHasData(false);
+          // Guest mode: Fetch data from localStorage
+          const storedQueries = localStorage.getItem("queryLogs");
+          const storedIndexes = localStorage.getItem("appliedIndexes");
+
+          if (!storedQueries || !storedIndexes) {
+            console.error("No data found in localStorage.");
+            setHasData(false);
+            return;
+          }
+
+          const queries = JSON.parse(storedQueries).map((query) => ({
+            ...query,
+            executionTime: parseInt(query.executionTime, 10), // Ensure executionTime is a number
+          }));
+
+          const recommendations = JSON.parse(storedIndexes);
+
+          if (queries.length === 0 || recommendations.length === 0) {
+            console.error("No valid data in localStorage.");
+            setHasData(false);
+            return;
+          }
+
+          console.log("Guest Mode - Queries:", queries);
+          console.log("Guest Mode - Recommendations:", recommendations);
+
+          setHasData(true);
+
+          // Process metrics
+          processMetrics(queries, recommendations);
           return;
         }
 
-        // Fetch query logs from MongoDB
+        // Logged-in mode: Fetch data from MongoDB
         const queryLogsResponse = await fetch("/api/data/queries", {
           method: "GET",
           headers: {
@@ -129,23 +210,14 @@ export default function Home() {
         }
 
         const queries = await queryLogsResponse.json();
-        queries.forEach((query) => {
-          if (!query.executionTime) {
-            query.executionTime = Math.round(500 + Math.random() * 500); // Simulate execution time
-          }
-        });
 
-        // Fetch applied indexes from MongoDB
-        const appliedIndexesResponse = await fetch(
-          "/api/data/appliedIndexes",
-          {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const appliedIndexesResponse = await fetch("/api/data/appliedIndexes", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
         if (!appliedIndexesResponse.ok) {
           setHasData(false);
@@ -154,7 +226,10 @@ export default function Home() {
 
         const recommendations = await appliedIndexesResponse.json();
 
-        if (queries.length === 0) {
+        console.log("MongoDB Mode - Queries:", queries);
+        console.log("MongoDB Mode - Recommendations:", recommendations);
+
+        if (queries.length === 0 || recommendations.length === 0) {
           setHasData(false);
           return;
         }
@@ -185,11 +260,11 @@ export default function Home() {
               </h2>
               <p className="text-gray-600 mb-6">
                 To see performance metrics and recommendations, please
-                upload query logs first.
+                Apply Indexes to your queries.
               </p>
-              <Link href="/query" passHref>
+              <Link href="/recommend" passHref>
                 <Button className="bg-purple-600 hover:bg-purple-700">
-                  Go to Query Logs
+                  Go to Recommendations
                 </Button>
               </Link>
             </div>
@@ -268,7 +343,7 @@ export default function Home() {
         </div>
 
         <div className="w-[98%] h-[40vh] m-auto">
-          <PerformanceComparison data={metrics.comparisonData} />
+        <PerformanceComparison data={metrics.comparisonData} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-1 w-[98%] h-[35vh] mt-1 m-auto">

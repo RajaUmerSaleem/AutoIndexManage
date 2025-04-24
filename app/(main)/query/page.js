@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useRef, useEffect } from 'react';
-
+import { toast, ToastContainer } from 'react-toastify';
 const QueryPage = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -52,28 +52,39 @@ const QueryPage = () => {
 
   const handleClearAll = async () => {
     if (isGuest) {
-      // Clear queries from localStorage for guest users
+      toast.info('Clearing queries and recommendations from localStorage...');
+      // Clear queries and recommendations from localStorage for guest users
       localStorage.removeItem('queryLogs');
+      localStorage.removeItem('appliedIndexes'); // Clear recommendations
       setQueries([]);
     } else {
-      // Clear queries from MongoDB for logged-in users
+      // Clear queries and recommendations from MongoDB for logged-in users
       const token = localStorage.getItem('token');
       try {
-        const response = await fetch('/api/data/queries', {
+        // Clear queries
+        const queryResponse = await fetch('/api/data/queries', {
           method: 'DELETE', // Use DELETE method to clear all queries
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
 
-        const data = await response.json();
-        if (response.ok) {
+        // Clear recommendations
+        const recommendationResponse = await fetch('/api/data/appliedIndexes', {
+          method: 'DELETE', // Use DELETE method to clear all recommendations
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (queryResponse.ok && recommendationResponse.ok) {
           setQueries([]); // Clear queries from state
+          toast.info('Queries and recommendations cleared successfully from Mongodb!');
         } else {
-          console.error('Failed to clear queries:', data.message);
+          console.error('Failed to clear queries or recommendations');
         }
       } catch (error) {
-        console.error('Error clearing queries from MongoDB:', error);
+        console.error('Error clearing queries or recommendations from MongoDB:', error);
       }
     }
   };
@@ -119,13 +130,21 @@ const QueryPage = () => {
       const content = e.target.result;
       const lines = content.split('\n').filter((line) => line.trim());
 
-      // Create query objects
-      const newQueries = lines.map((query, index) => ({
-        id: `${Date.now()}-${index}`, // Ensure unique key
-        query: query.trim(),
-        timestamp: new Date().toISOString(),
-        fileName: file.name,
-      }));
+      // Parse each line into timestamp, query, and execution time
+      const newQueries = lines.map((line, index) => {
+        const parts = line.split(';');
+        const timestamp = parts[0]?.trim(); // Extract timestamp
+        const query = parts[1]?.trim(); // Extract query
+        const executionTime = parts[2]?.trim(); // Extract execution time (optional)
+
+        return {
+          id: `${timestamp}${Math.random()}-${index}`, // More unique key
+          query,
+          timestamp,
+          executionTime,
+          fileName: file.name,
+        };
+      });
 
       // Handle data based on user mode
       if (isGuest) {
@@ -133,6 +152,7 @@ const QueryPage = () => {
         const updatedQueries = [...queries, ...newQueries];
         setQueries(updatedQueries);
         localStorage.setItem('queryLogs', JSON.stringify(updatedQueries));
+        toast.success('Queries saved to localStorage!');
       } else {
         // Logged-In Mode: Save to MongoDB
         for (const query of newQueries) {
@@ -160,8 +180,10 @@ const QueryPage = () => {
 
       const data = await response.json();
       if (!data.success) {
-        console.error('Failed to save query to MongoDB:', data.message);
+        toast.error('Failed to save query to MongoDB');
       }
+      else { toast.success('Query saved in Mongodb!'); }
+
     } catch (error) {
       console.error('Error saving query to MongoDB:', error);
     }
@@ -192,13 +214,13 @@ const QueryPage = () => {
 
   return (
     <div className="w-5/6 flex flex-col h-[98%] mt-0.5">
+
       {/* Fixed height upload section */}
       <div className="bg-white p-2 rounded-lg border border-gray-200 shadow-sm mb-2 w-[98%] m-auto">
         <h2 className="text-lg font-semibold mb-4">Upload Query Logs</h2>
         <div
-          className={`border-2 border-dashed rounded-lg p-8 transition-colors hover:border-purple-500 ${
-            isDragging ? 'border-purple-500 bg-purple-50' : 'border-gray-300'
-          }`}
+          className={`border-2 border-dashed rounded-lg p-8 transition-colors hover:border-purple-500 ${isDragging ? 'border-purple-500 bg-purple-50' : 'border-gray-300'
+            }`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
